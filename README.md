@@ -240,14 +240,24 @@ bir zamanlayıcı vardır, kuyruk boşalınca o da kapanır.
 ### CPU ölçümü
 
 ```bash
-.venv/bin/python main.py --windowed &
-PID=$!; sleep 5; ps -o time= -p $PID; sleep 30; ps -o time= -p $PID
+bash scripts/measure_cpu.sh
 ```
 
-İki değerin farkı 30 saniyede harcanan CPU süresidir. Linux'ta canlı izlemek için:
+Pencere açılır, 30 saniye boşta ölçülür ve kendisi kapanır (bu sırada
+dokunmayın). Canlı izlemek isterseniz:
 
 ```bash
 top -b -n 5 -d 1 -p $(pgrep -f "main.py")
 ```
 
-Ölçüm sonuçları için PLAN.md'ye bakın.
+**Ölçülen değerler (macOS 15, pygame-ce 2.5.8, SDL 2.32):** boşta **%5.3**.
+Bunun ~%1.3'ü ses aygıtının geri çağırma iş parçacığı, ~%4'ü ise
+`pygame.event.wait()`. Ölçümler bu maliyetin bizim döngümüzden değil SDL'in
+bekleme uygulamasından geldiğini gösteriyor: dummy video sürücüsünde, hiç
+pencere yokken bile aynı maliyet çıkıyor. Karşılaştırma için saf
+`time.sleep()` döngüsü %0.00.
+
+Linux'ta SDL'in X11 arka ucu display soketinde gerçek bloklama yaptığı için
+bu maliyetin çıkmaması bekleniyor; hedef makinede yukarıdaki betikle
+doğrulayın. Yüksek çıkarsa 50 ms'lik uyku + `event.poll()` hibrit döngüsü
+ölçümde %0.5 veriyor (tuş gecikmesi en fazla 50 ms).

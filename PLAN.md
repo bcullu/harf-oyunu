@@ -79,7 +79,7 @@ requirements.txt
 | **M2** ✅ | `scripts/build_audio.py` (piper→say→espeak-ng), `app/audio.py`, harf/rakam seslendirme, fonetik metinler `data/*.json`'dan. | `python scripts/build_audio.py --lang tr` çalıştır → `audio/tr/*.wav` sayısı = 29 harf + 10 rakam + UI sesleri. Test: her JSON anahtarı için wav var mı; wav'lar >0 byte. Oyun tarafı `SDL_AUDIODRIVER=dummy` ile Sound yüklemesini doğrular. Elle: A'ya bas, "A, araba gibi" duyulmalı. |
 | **M3** ✅ | `config.json`, F1 ile anlık dil değişimi (İngilizce veri + wav seti), ebeveyn ayarları: ses seviyesi (+/-), harf seti (letters/digits/both), font boyutu. Ayar diske yazılır. | `tests/test_config.py`: bozuk/eksik JSON → varsayılan; kaydet→yükle round-trip. Smoke: F1 gönder → aktif dil değişti, config.json güncellendi. Elle: F1'e bas, çık, tekrar aç — dil hatırlanıyor mu. |
 | **M4** ✅ | "Harfi Bul" modu: hedef harf sesli+yazılı istenir, doğru → alkış + yıldız, yanlış → nazik "tekrar dene", 5 yıldızda kutlama ekranı. F2 ile mod değişimi. | `tests/test_game_modes.py`: doğru/yanlış tuş → beklenen event dizisi; 5 doğru → `CELEBRATE`; hedef seçimi `char_set` ayarına uyuyor mu; aynı hedef üst üste gelmiyor mu. Smoke: sentetik doğru cevap dizisiyle kutlamaya ulaşma. Elle: F2, istenen harfe bas. |
-| **M5** | `install.sh` (venv + pygame-ce + build_audio), `README.md` (Türkçe, adım adım), `harf-oyunu.desktop`, boştaki CPU ölçümü `top` ile raporlanır. | `bash -n install.sh`, temiz venv'de install.sh çalıştır → `python main.py --self-check` geçer. `.desktop` dosyası `desktop-file-validate` (varsa) ile kontrol. CPU: uygulama açıkken 60 sn boşta `top -l 5`/`top -b -n 5` çıktısı raporlanır (hedef <%1). |
+| **M5** ✅ | `install.sh` (venv + pygame-ce + build_audio), `README.md` (Türkçe, adım adım), `harf-oyunu.desktop`, boştaki CPU ölçümü `top` ile raporlanır. | `bash -n install.sh`, temiz venv'de install.sh çalıştır → `python main.py --self-check` geçer. `.desktop` dosyası `desktop-file-validate` (varsa) ile kontrol. CPU: uygulama açıkken 60 sn boşta `top -l 5`/`top -b -n 5` çıktısı raporlanır (hedef <%1). |
 
 ## 4. Riskler / varsayımlar
 
@@ -113,3 +113,30 @@ Her taş için: kod → dummy-driver smoke test → `pytest` + `--self-check` �
   sesleri üretim sonrası WSOLA ile 1.6 kat uzatılıyor (perde değişmiyor).
 - **`audio/` depoya dahil.** Sesler macOS'ta üretilip hedef makineye hazır
   kopyalanıyor.
+
+
+## 7. M5 sonuçları
+
+- `install.sh` temiz bir kopyada sıfırdan denendi: venv + pygame-ce kurulumu,
+  hazır seslerin bulunup üretimin atlanması, `--self-check` doğrulaması geçti.
+- `.desktop` dosyası üretilip ayrıştırıldı (yer tutucu kalmıyor); menü girdisi
+  yalnızca Linux'ta kuruluyor.
+- İkon `scripts/make_icon.py` ile pygame kullanılarak üretiliyor (ek bağımlılık yok).
+
+### CPU ölçümü (macOS 15, pygame-ce 2.5.8 / SDL 2.32, boşta 30 sn)
+
+| Ölçülen | CPU |
+|---|---|
+| Uygulama (mevcut hâli) | %5.3 |
+| — `pygame.event.wait()` payı | ~%3.2–4.4 |
+| — mikser payı (512 tampon) | ~%1.8 |
+| — mikser (1024 tampon, uygulandı) | ~%1.3 |
+| Referans: saf `time.sleep()` döngüsü | %0.00 |
+| Referans: 50 ms uyku + `event.poll()` (miksersiz) | %0.5 |
+
+Maliyet uygulamanın olay döngüsünden değil SDL'in bekleme uygulamasından
+geliyor: dummy video sürücüsünde, pencere hiç açılmadan da aynı sonuç çıkıyor.
+Linux'ta X11 arka ucu gerçek bloklama yaptığı için sorunun görülmemesi
+bekleniyor. **Karar (onaylandı): kod değiştirilmedi, ölçüm hedef Linux
+makinede `scripts/measure_cpu.sh` ile tekrarlanacak.** Orada da yüksek çıkarsa
+hibrit döngüye geçilecek.
