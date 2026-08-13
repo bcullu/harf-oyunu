@@ -97,11 +97,19 @@ fi
 
 # 6. Kısayollar (yalnızca Linux) ---------------------------------------------
 desktop_dir() {
-    # Masaüstü klasörü dile göre değişir (Desktop / Masaüstü)
+    # Masaüstü klasörü dile göre değişir (Desktop / Masaüstü). xdg-user-dir
+    # kurulu olsa bile boş ya da var olmayan bir yol dönebiliyor; bu yüzden
+    # sonucu doğrulayıp yedek adaylara düşüyoruz.
+    local candidate
     if command -v xdg-user-dir >/dev/null 2>&1; then
-        xdg-user-dir DESKTOP 2>/dev/null && return 0
+        candidate="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+        if [ -n "$candidate" ] && [ -d "$candidate" ] \
+           && [ "$candidate" != "$HOME" ]; then
+            echo "$candidate"
+            return 0
+        fi
     fi
-    for candidate in "$HOME/Desktop" "$HOME/Masaüstü"; do
+    for candidate in "$HOME/Masaüstü" "$HOME/Desktop"; do
         [ -d "$candidate" ] && echo "$candidate" && return 0
     done
     return 1
