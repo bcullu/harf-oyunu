@@ -75,18 +75,18 @@ requirements.txt
 
 | # | Kapsam | Nasıl test edilecek |
 |---|--------|---------------------|
-| **M1** | Pencere (tam ekran), `event.unicode` ile tuş okuma, dev harf/rakam çizimi, rastgele renk, yumuşama animasyonu, Ctrl+Q / ESC-2sn çıkış. Ses yok. | `pytest tests/test_text_tr.py tests/test_smoke.py` — dummy driver'da pencere açılır, sentetik `ğ`/`i`/`5` olayları beslenir, ekranda çizilen karakter `tr_upper` sonucuna eşit mi diye modelden doğrulanır. `python main.py --self-check`. Elle: tam ekran açılıp Türkçe harflerin göründüğü. CPU: `top` ile boşta ölçüm. |
-| **M2** | `scripts/build_audio.py` (piper→say→espeak-ng), `app/audio.py`, harf/rakam seslendirme, fonetik metinler `data/*.json`'dan. | `python scripts/build_audio.py --lang tr` çalıştır → `audio/tr/*.wav` sayısı = 29 harf + 10 rakam + UI sesleri. Test: her JSON anahtarı için wav var mı; wav'lar >0 byte. Oyun tarafı `SDL_AUDIODRIVER=dummy` ile Sound yüklemesini doğrular. Elle: A'ya bas, "A, araba gibi" duyulmalı. |
+| **M1** ✅ | Pencere (tam ekran), `event.unicode` ile tuş okuma, dev harf/rakam çizimi, rastgele renk, yumuşama animasyonu, Ctrl+Q / ESC-2sn çıkış. Ses yok. | `pytest tests/test_text_tr.py tests/test_smoke.py` — dummy driver'da pencere açılır, sentetik `ğ`/`i`/`5` olayları beslenir, ekranda çizilen karakter `tr_upper` sonucuna eşit mi diye modelden doğrulanır. `python main.py --self-check`. Elle: tam ekran açılıp Türkçe harflerin göründüğü. CPU: `top` ile boşta ölçüm. |
+| **M2** ✅ | `scripts/build_audio.py` (piper→say→espeak-ng), `app/audio.py`, harf/rakam seslendirme, fonetik metinler `data/*.json`'dan. | `python scripts/build_audio.py --lang tr` çalıştır → `audio/tr/*.wav` sayısı = 29 harf + 10 rakam + UI sesleri. Test: her JSON anahtarı için wav var mı; wav'lar >0 byte. Oyun tarafı `SDL_AUDIODRIVER=dummy` ile Sound yüklemesini doğrular. Elle: A'ya bas, "A, araba gibi" duyulmalı. |
 | **M3** | `config.json`, F1 ile anlık dil değişimi (İngilizce veri + wav seti), ebeveyn ayarları: ses seviyesi (+/-), harf seti (letters/digits/both), font boyutu. Ayar diske yazılır. | `tests/test_config.py`: bozuk/eksik JSON → varsayılan; kaydet→yükle round-trip. Smoke: F1 gönder → aktif dil değişti, config.json güncellendi. Elle: F1'e bas, çık, tekrar aç — dil hatırlanıyor mu. |
 | **M4** | "Harfi Bul" modu: hedef harf sesli+yazılı istenir, doğru → alkış + yıldız, yanlış → nazik "tekrar dene", 5 yıldızda kutlama ekranı. F2 ile mod değişimi. | `tests/test_game_modes.py`: doğru/yanlış tuş → beklenen event dizisi; 5 doğru → `CELEBRATE`; hedef seçimi `char_set` ayarına uyuyor mu; aynı hedef üst üste gelmiyor mu. Smoke: sentetik doğru cevap dizisiyle kutlamaya ulaşma. Elle: F2, istenen harfe bas. |
 | **M5** | `install.sh` (venv + pygame-ce + build_audio), `README.md` (Türkçe, adım adım), `harf-oyunu.desktop`, boştaki CPU ölçümü `top` ile raporlanır. | `bash -n install.sh`, temiz venv'de install.sh çalıştır → `python main.py --self-check` geçer. `.desktop` dosyası `desktop-file-validate` (varsa) ile kontrol. CPU: uygulama açıkken 60 sn boşta `top -l 5`/`top -b -n 5` çıktısı raporlanır (hedef <%1). |
 
 ## 4. Riskler / varsayımlar
 
-- **Geliştirme makinesi macOS**, hedef Linux. `say` ile wav üretilecek (`say -o x.aiff` →
-  `afconvert` ile wav). Linux'ta piper/espeak-ng yolu ayrıca kodlanacak ama burada
-  fiilen test edilemez — sadece kuru testi (`--dry-run`) yapılacak. **Onayın gerekli:
-  bu kabul edilebilir mi, yoksa Linux tarafını sen mi test edeceksin?**
+- **Geliştirme makinesi macOS**, hedef Linux. (M2'de çözüldü) Sesler macOS'ta
+  `say`/Yelda ile üretilip **`audio/` klasörüyle birlikte depoda taşınıyor**;
+  hedef makinede yeniden üretim gerekmiyor. `install.sh` sesler varsa
+  `build_audio.py`'yi atlayacak.
 - Wayland'de tam ekran + klavye SDL3/SDL2 üzerinden sorunsuz; `SDL_VIDEODRIVER`
   otomatik seçilecek, zorlanmayacak.
 - Türkçe glif içeren sistem fontu yoksa harfler kutu görünür — README'de
@@ -97,3 +97,19 @@ requirements.txt
 
 Her taş için: kod → dummy-driver smoke test → `pytest` + `--self-check` → commit →
 "M<n> tamam, şunu test et: ..." deyip DUR.
+
+
+## 6. M2'de plandan sapmalar (onaylandı)
+
+- **Örnek kelimeler kaldırıldı.** Harfler artık "A, araba gibi" yerine yalnızca
+  kendi sesiyle okunuyor (`bı`, `cı`, `lı`...). Ğ istisna: "yumuşak ge".
+- **piper kullanılamadı.** Türkçe için tek model var (`tr_TR-dfki-medium`) ve
+  cümle içinde kesin süreli sessizlik üretemiyor; tek heceleri de bozuk okuyor.
+  Kod `Engine.exact_pause` bayrağıyla duruyor, seçilirse sesi doğrudan üretir.
+- **Taşıyıcı cümle tekniği eklendi.** Harf, "Şu harf | bı | evet." cümlesinin
+  içinde sentezlenip ortadaki parça kesiliyor (`scripts/wav_trim.py`). Doğru
+  telaffuzu bu sağlıyor.
+- **Zaman germe eklendi.** TTS motorlarının bir hız tabanı olduğu için harf
+  sesleri üretim sonrası WSOLA ile 1.6 kat uzatılıyor (perde değişmiyor).
+- **`audio/` depoya dahil.** Sesler macOS'ta üretilip hedef makineye hazır
+  kopyalanıyor.
