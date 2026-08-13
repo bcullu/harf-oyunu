@@ -1,1 +1,4 @@
 pygame-ce>=2.4
+
+# Yalnızca kurulumda ses üretmek için (çalışma anında gerekmez):
+#   pip install piper-tts

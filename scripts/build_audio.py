@@ -65,7 +65,8 @@ PAUSE_MS = 700
 SAY_RATE = 130          # kelime/dakika (macOS varsayılanı ~175)
 ESPEAK_SPEED = 115      # kelime/dakika (espeak varsayılanı 175)
 ESPEAK_WORD_GAP = 12    # 10 ms'lik birimler, kelimeler arası ek boşluk
-PIPER_LENGTH_SCALE = 1.3  # >1 = daha yavaş
+PIPER_LENGTH_SCALE = 1.15  # >1 = daha yavaş
+PIPER_TRAILING_SILENCE = 0.2  # saniye, ses sonundaki sessizlik
 
 
 class EngineError(RuntimeError):
@@ -92,7 +93,10 @@ class PiperEngine(Engine):
     name = "piper"
 
     def __init__(self):
-        self.binary = shutil.which("piper") or shutil.which("piper-tts")
+        # venv içine kurulmuşsa PATH'te olmayabilir; yorumlayıcının yanına da bak
+        venv_piper = Path(sys.executable).parent / "piper"
+        self.binary = (shutil.which("piper") or shutil.which("piper-tts")
+                       or (str(venv_piper) if venv_piper.exists() else None))
         self.models: dict[str, Path] = {}
         if self.binary:
             self._find_models()
@@ -121,7 +125,7 @@ class PiperEngine(Engine):
     def synth(self, text: str, lang: str, out_path: Path) -> None:
         cmd = [self.binary, "--model", str(self.models[lang]),
                "--length_scale", str(PIPER_LENGTH_SCALE),
-               "--sentence_silence", str(PAUSE_MS / 1000),
+               "--sentence_silence", str(PIPER_TRAILING_SILENCE),
                "--output_file", str(out_path)]
         result = subprocess.run(cmd, input=text.encode("utf-8"),
                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
