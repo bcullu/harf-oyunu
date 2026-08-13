@@ -95,22 +95,53 @@ if ! "$VENV/bin/python" "$INSTALL_DIR/main.py" --self-check; then
     exit 1
 fi
 
-# 6. Masaüstü kısayolu (yalnızca Linux) --------------------------------------
+# 6. Kısayollar (yalnızca Linux) ---------------------------------------------
+desktop_dir() {
+    # Masaüstü klasörü dile göre değişir (Desktop / Masaüstü)
+    if command -v xdg-user-dir >/dev/null 2>&1; then
+        xdg-user-dir DESKTOP 2>/dev/null && return 0
+    fi
+    for candidate in "$HOME/Desktop" "$HOME/Masaüstü"; do
+        [ -d "$candidate" ] && echo "$candidate" && return 0
+    done
+    return 1
+}
+
 if [ "$(uname -s)" = "Linux" ]; then
+    ENTRY="$(mktemp)"
+    sed "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
+        "$INSTALL_DIR/harf-oyunu.desktop.in" > "$ENTRY"
+    if command -v desktop-file-validate >/dev/null 2>&1; then
+        desktop-file-validate "$ENTRY" && info "Kısayol dosyası doğrulandı"
+    fi
+
+    # a) Uygulama menüsü
     APPS_DIR="$HOME/.local/share/applications"
     mkdir -p "$APPS_DIR"
-    sed "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
-        "$INSTALL_DIR/harf-oyunu.desktop.in" > "$APPS_DIR/harf-oyunu.desktop"
-    chmod +x "$APPS_DIR/harf-oyunu.desktop"
-    if command -v desktop-file-validate >/dev/null 2>&1; then
-        desktop-file-validate "$APPS_DIR/harf-oyunu.desktop" \
-            && info "Kısayol doğrulandı"
-    fi
+    install -m 755 "$ENTRY" "$APPS_DIR/harf-oyunu.desktop"
     command -v update-desktop-database >/dev/null 2>&1 \
         && update-desktop-database "$APPS_DIR" 2>/dev/null || true
-    info "Masaüstü kısayolu kuruldu: uygulama menüsünde 'Harf Oyunu'"
+    info "Uygulama menüsüne eklendi: 'Harf Oyunu'"
+
+    # b) Masaüstü ikonu (çocuk terminale girmeden çift tıklayabilsin)
+    if DESK="$(desktop_dir)" && [ -n "$DESK" ] && [ -d "$DESK" ]; then
+        install -m 755 "$ENTRY" "$DESK/harf-oyunu.desktop"
+        # Cinnamon/GNOME masaüstündeki kısayolu "güvenilir" işaretlemeden
+        # çalıştırmıyor; işaretlenmezse çift tıklayınca uyarı çıkıyor
+        if command -v gio >/dev/null 2>&1; then
+            gio set "$DESK/harf-oyunu.desktop" metadata::trusted true 2>/dev/null \
+                || gio set "$DESK/harf-oyunu.desktop" \
+                       -t string metadata::trusted yes 2>/dev/null || true
+        fi
+        # Nemo/Nautilus ikonu hemen yenilesin diye dosyaya dokun
+        touch "$DESK/harf-oyunu.desktop"
+        info "Masaüstü ikonu kuruldu: $DESK/harf-oyunu.desktop"
+    else
+        warn "Masaüstü klasörü bulunamadı, yalnızca menü girdisi eklendi"
+    fi
+    rm -f "$ENTRY"
 else
-    info "macOS: masaüstü kısayolu atlandı (menü girdisi Linux'a özgü)"
+    info "macOS: kısayollar atlandı (menü/masaüstü girdisi Linux'a özgü)"
 fi
 
 echo

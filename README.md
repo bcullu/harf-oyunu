@@ -29,7 +29,7 @@ Betik sırayla şunları yapar:
 4. Ses dosyalarını kontrol eder (hazır geldiği için yeniden üretmez)
 5. Masaüstü ikonunu üretir
 6. Kurulumu doğrular (`--self-check`)
-7. Linux'ta uygulama menüsüne "Harf Oyunu" kısayolu ekler
+7. Linux'ta uygulama menüsüne ve masaüstüne "Harf Oyunu" kısayolu ekler
 
 Betik birden çok kez çalıştırılabilir, var olanı bozmaz.
 
@@ -172,21 +172,35 @@ depoda taşınıyor.
 
 ---
 
-## 7. Masaüstü kısayolu (Linux)
+## 7. Kısayollar (Linux)
 
-`install.sh` şunu oluşturur:
+`install.sh` iki kısayol oluşturur:
 
 ```
-~/.local/share/applications/harf-oyunu.desktop
+~/.local/share/applications/harf-oyunu.desktop   # uygulama menüsü
+<Masaüstü>/harf-oyunu.desktop                    # masaüstü ikonu
 ```
 
-Kısayol menüde görünmezse:
+Masaüstü klasörü dile göre değişebildiği için `xdg-user-dir DESKTOP` ile
+bulunur (Desktop / Masaüstü). Çocuk terminale girmeden çift tıklayarak
+oyunu açabilir.
+
+Kısayolu elle oluşturmak isterseniz, kurulum klasöründe:
 
 ```bash
-update-desktop-database ~/.local/share/applications
+DESK="$(xdg-user-dir DESKTOP)"
+sed "s|__INSTALL_DIR__|$PWD|g" harf-oyunu.desktop.in > "$DESK/harf-oyunu.desktop"
+chmod +x "$DESK/harf-oyunu.desktop"
+gio set "$DESK/harf-oyunu.desktop" metadata::trusted true
 ```
 
-Kaldırmak için dosyayı silmeniz yeterlidir.
+### Çift tıklayınca "güvenilmeyen başlatıcı" uyarısı çıkarsa
+
+Cinnamon ve GNOME, masaüstündeki kısayolları "güvenilir" işaretlenmeden
+çalıştırmaz. `install.sh` bunu `gio` ile otomatik yapar; olmazsa ikona sağ
+tıklayıp **"Başlatmaya izin ver"** (Allow Launching) seçin.
+
+Kısayolu kaldırmak için dosyaları silmeniz yeterlidir.
 
 ---
 
@@ -198,6 +212,7 @@ Kaldırmak için dosyayı silmeniz yeterlidir.
 | Hiç ses yok | `.venv/bin/python main.py --self-check` çıktısına bakın; "ses OK" yazmıyorsa `scripts/build_audio.py` çalıştırın |
 | Türkçe harfler yanlış geliyor | Klavye düzeninin Türkçe Q olduğundan emin olun; oyun tuş kodunu değil karakteri okur |
 | Tam ekrandan çıkamıyorum | Ctrl+Q, ya da ESC'yi 2 saniye basılı tutun |
+| Masaüstü ikonu uyarı veriyor | İkona sağ tıklayıp "Başlatmaya izin ver" seçin |
 | Wayland'de pencere açılmıyor | `SDL_VIDEODRIVER=x11 .venv/bin/python main.py` deneyin |
 
 ---
