@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 
 import pygame
@@ -12,6 +13,8 @@ import pygame
 BACKGROUND = (16, 16, 24)
 HINT_COLOR = (90, 90, 110)
 STATUS_COLOR = (170, 170, 200)
+PROMPT_COLOR = (225, 225, 240)
+STAR_COLOR = (255, 205, 60)
 EXIT_BAR_COLOR = (220, 80, 80)
 
 # Türkçe glifleri (ğ, İ, ş, ...) içermesi muhtemel font adayları
@@ -38,6 +41,7 @@ PALETTE = (
 )
 
 ANIM_DURATION_MS = 300
+CELEBRATE_MS = 3200  # kutlama ekranının süresi
 
 
 def find_font_path() -> str | None:
@@ -63,9 +67,14 @@ class Renderer:
         self._font_path = find_font_path()
         self._glyph_font = self._make_font(int(screen.get_height() * font_scale))
         self._hint_font = self._make_font(max(14, screen.get_height() // 32))
+        self._prompt_font = self._make_font(max(20, screen.get_height() // 12))
 
         self.current_char: str | None = None
         self.status_text = ""  # ayar değişince üstte görünen kısa bilgi
+        self.prompt_text = ""  # "Harfi Bul" modunda istenen harf
+        self.stars = 0
+        self.celebrate_text = ""
+        self._celebrate_start: int | None = None
         self._color = PALETTE[0]
         self._glyph: pygame.Surface | None = None
         self._anim_start_ms = 0
@@ -103,16 +112,35 @@ class Renderer:
         assert self.current_char is not None
         self._glyph = self._glyph_font.render(self.current_char, True, self._color)
 
+    # -- oyun modu göstergeleri ------------------------------------------
+    def set_prompt(self, text: str) -> None:
+        self.prompt_text = text
+
+    def set_stars(self, count: int) -> None:
+        self.stars = count
+
+    def start_celebration(self, text: str, now_ms: int) -> None:
+        self.celebrate_text = text
+        self._celebrate_start = now_ms
+
+    @property
+    def celebrating(self) -> bool:
+        return self._celebrate_start is not None
+
     # -- animasyon -------------------------------------------------------
     @property
     def animating(self) -> bool:
-        return self._anim_active
+        return self._anim_active or self.celebrating
 
     def update(self, now_ms: int) -> bool:
         """Animasyon durumunu ilerletir. Hâlâ animasyon varsa True döner."""
         if self._anim_active and now_ms - self._anim_start_ms >= ANIM_DURATION_MS:
             self._anim_active = False
-        return self._anim_active
+        if (self._celebrate_start is not None
+                and now_ms - self._celebrate_start >= CELEBRATE_MS):
+            self._celebrate_start = None
+            self.celebrate_text = ""
+        return self.animating
 
     def _anim_progress(self, now_ms: int) -> float:
         if not self._anim_active:
@@ -123,6 +151,11 @@ class Renderer:
     # -- çizim -----------------------------------------------------------
     def draw(self, now_ms: int) -> None:
         self.screen.fill(BACKGROUND)
+
+        if self.celebrating:
+            self._draw_celebration(now_ms)
+            pygame.display.flip()
+            return
 
         if self._glyph is not None:
             t = self._anim_progress(now_ms)
@@ -140,10 +173,48 @@ class Renderer:
         self._draw_hint()
         if self.status_text:
             self._draw_status()
+        if self.prompt_text:
+            self._draw_prompt()
+        if self.stars:
+            self._draw_stars()
         if self.exit_progress > 0:
             self._draw_exit_bar()
 
         pygame.display.flip()
+
+    def _draw_prompt(self) -> None:
+        text = self._prompt_font.render(self.prompt_text, True, PROMPT_COLOR)
+        top = 16 + (self._hint_font.get_height() + 8 if self.status_text else 0)
+        rect = text.get_rect(midtop=(self.screen.get_width() // 2, top))
+        self.screen.blit(text, rect)
+
+    def _draw_stars(self) -> None:
+        # Kazanılan yıldızlar sol altta; kalanlar soluk daire olarak durur
+        text = self._prompt_font.render("★ " * self.stars, True, STAR_COLOR)
+        rect = text.get_rect(bottomleft=(24, self.screen.get_height() - 12))
+        self.screen.blit(text, rect)
+
+    def _draw_celebration(self, now_ms: int) -> None:
+        elapsed = now_ms - (self._celebrate_start or now_ms)
+        # Yavaşça nefes alan bir büyüme; ekran sakin kalsın diye küçük genlik
+        pulse = 1.0 + 0.06 * math.sin(elapsed / 160.0)
+        color = PALETTE[(elapsed // 220) % len(PALETTE)]
+
+        text = self._glyph_font.render(self.celebrate_text, True, color)
+        scale = min(1.0, self.screen.get_width() * 0.9 / max(1, text.get_width()))
+        size = (max(1, int(text.get_width() * scale * pulse)),
+                max(1, int(text.get_height() * scale * pulse)))
+        text = pygame.transform.smoothscale(text, size)
+        center = self.screen.get_rect().center
+        self.screen.blit(text, text.get_rect(center=(center[0], center[1] - 40)))
+
+        stars = self._glyph_font.render("★" * max(1, self.stars), True, STAR_COLOR)
+        star_scale = min(1.0, self.screen.get_width() * 0.6 / max(1, stars.get_width()))
+        stars = pygame.transform.smoothscale(
+            stars, (max(1, int(stars.get_width() * star_scale)),
+                    max(1, int(stars.get_height() * star_scale))))
+        self.screen.blit(stars, stars.get_rect(
+            midtop=(center[0], center[1] + self.screen.get_height() // 8)))
 
     def _draw_status(self) -> None:
         text = self._hint_font.render(self.status_text, True, STATUS_COLOR)

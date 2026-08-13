@@ -55,20 +55,20 @@ class Voice:
         self.load()
 
     def load(self) -> None:
-        """Dile ait tüm wav'ları belleğe alır."""
+        """Dile ait wav'ları ve dilden bağımsız efektleri belleğe alır."""
         self.sounds.clear()
         self.missing.clear()
-        directory = audio_dir_for(self.lang_code)
-        if not directory.is_dir():
-            return
-        for path in sorted(directory.glob("*.wav")):
-            try:
-                sound = self._pygame.mixer.Sound(str(path))
-            except Exception:  # bozuk dosya oyunu durdurmasın
-                self.missing.append(path.stem)
+        for directory in (audio_dir_for(self.lang_code), AUDIO_DIR / "sfx"):
+            if not directory.is_dir():
                 continue
-            sound.set_volume(self.volume)
-            self.sounds[path.stem] = sound
+            for path in sorted(directory.glob("*.wav")):
+                try:
+                    sound = self._pygame.mixer.Sound(str(path))
+                except Exception:  # bozuk dosya oyunu durdurmasın
+                    self.missing.append(path.stem)
+                    continue
+                sound.set_volume(self.volume)
+                self.sounds[path.stem] = sound
 
     def set_volume(self, volume: float) -> None:
         self.volume = max(0.0, min(1.0, volume))
@@ -94,6 +94,12 @@ class Voice:
 
     def play_phrase(self, name: str) -> bool:
         return self.play(phrase_key(name))
+
+    def busy(self) -> bool:
+        """Kanalda hâlâ çalan bir ses var mı? (ses kuyruğu bunu yoklar)"""
+        if self._channel is None:
+            return False
+        return bool(self._channel.get_busy())
 
     def stop(self) -> None:
         if self._channel is not None:

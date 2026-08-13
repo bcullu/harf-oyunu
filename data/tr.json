@@ -86,7 +86,7 @@
     "9": "Dokuz."
   },
   "phrases": {
-    "find_letter": "Hangisi {char}? Bul bakalım.",
+    "find_letter": "Bul bakalım.",
     "correct": "Aferin! Doğru bildin.",
     "wrong": "Olsun, tekrar dene.",
     "celebrate": "Harikasın! Beş yıldız kazandın.",

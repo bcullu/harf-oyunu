@@ -171,3 +171,57 @@ def time_stretch(samples: array.array, rate: int, factor: float) -> array.array:
     for value in out[:out_pos + hop_out]:
         result.append(max(-32768, min(32767, int(value))))
     return result
+
+
+# --- sentetik efekt sesleri -------------------------------------------------
+# Alkış ve yıldız sesleri TTS ile üretilemez; saf Python ile sentezlenir.
+
+def sine(freq: float, duration_ms: int, rate: int, amplitude: float = 0.35,
+         decay: float = 4.0) -> array.array:
+    """Sönümlenen sinüs tonu."""
+    import math
+    count = rate * duration_ms // 1000
+    out = array.array("h")
+    for i in range(count):
+        t = i / rate
+        envelope = math.exp(-decay * t) * min(1.0, i / (rate * 0.005 + 1))
+        out.append(int(32767 * amplitude * envelope
+                       * math.sin(2 * math.pi * freq * t)))
+    return out
+
+
+def noise_burst(duration_ms: int, rate: int, amplitude: float = 0.25,
+                seed: int = 1) -> array.array:
+    """Alkış benzeri gürültü patlaması (hızlı yükselip yavaş sönen)."""
+    import math
+    import random as _random
+    rnd = _random.Random(seed)
+    count = rate * duration_ms // 1000
+    out = array.array("h")
+    for i in range(count):
+        t = i / rate
+        attack = min(1.0, t / 0.01)
+        envelope = attack * math.exp(-9.0 * t)
+        out.append(int(32767 * amplitude * envelope * (rnd.random() * 2 - 1)))
+    return out
+
+
+def mix(*layers: array.array) -> array.array:
+    """Katmanları üst üste bindirir (en uzun katman kadar sürer)."""
+    length = max((len(layer) for layer in layers), default=0)
+    out = array.array("h", [0] * length)
+    for layer in layers:
+        for i, value in enumerate(layer):
+            out[i] = max(-32768, min(32767, out[i] + value))
+    return out
+
+
+def concat(*parts: array.array) -> array.array:
+    out = array.array("h")
+    for part in parts:
+        out.extend(part)
+    return out
+
+
+def silence(duration_ms: int, rate: int) -> array.array:
+    return array.array("h", [0] * (rate * duration_ms // 1000))

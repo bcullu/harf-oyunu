@@ -23,10 +23,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.audio import audio_dir_for, key_for  # noqa: E402
+from app.audio import AUDIO_DIR, audio_dir_for, key_for  # noqa: E402
 from app.config import SUPPORTED_LANGUAGES, load_language  # noqa: E402
-from scripts.wav_trim import (TrimError, extract_segment, read_wav,  # noqa: E402
-                              time_stretch, write_wav)
+from scripts.wav_trim import (TrimError, concat, extract_segment,  # noqa: E402
+                              mix, noise_burst, read_wav, silence,
+                              sine, time_stretch, write_wav)
 
 # piper ses modellerinin aranacağı dizinler
 PIPER_VOICE_DIRS = (
@@ -308,6 +309,56 @@ def build(lang_code: str, engine: Engine, force: bool, dry_run: bool,
     return made, skipped
 
 
+# Efekt sesleri: dile bağlı olmadığı için audio/sfx/ altında tutulur
+SFX_RATE = 22050
+
+
+def _sfx_params():
+    """wave modülünün beklediği parametre demeti (16-bit mono)."""
+    import wave
+    return wave._wave_params(1, 2, SFX_RATE, 0, "NONE", "not compressed")
+
+
+def build_sfx(force: bool, dry_run: bool) -> int:
+    """Alkış/yıldız seslerini sentezler (TTS ile üretilemezler)."""
+    out_dir = AUDIO_DIR / "sfx"
+    # Do majör arpej: çocuk için neşeli ve tiz
+    c5, e5, g5, c6, e6, g6 = 523, 659, 784, 1046, 1318, 1568
+    effects = {
+        # doğru cevap: kısa yükselen üç nota
+        "sfx_correct": concat(sine(c6, 90, SFX_RATE), sine(e6, 90, SFX_RATE),
+                              sine(g6, 220, SFX_RATE, decay=6.0)),
+        # nazik uyarı: alçak, yumuşak tek nota (ceza hissi vermesin)
+        "sfx_wrong": sine(392, 260, SFX_RATE, amplitude=0.22, decay=5.0),
+        # yıldız: kısa parıltı
+        "sfx_star": concat(sine(g6, 70, SFX_RATE, amplitude=0.3),
+                           sine(c6 * 2, 160, SFX_RATE, amplitude=0.3, decay=8.0)),
+        # kutlama: arpej + alkış
+        "sfx_celebrate": concat(
+            sine(c5, 120, SFX_RATE), sine(e5, 120, SFX_RATE),
+            sine(g5, 120, SFX_RATE), sine(c6, 300, SFX_RATE, decay=3.0),
+            silence(40, SFX_RATE),
+            mix(*(concat(silence(i * 45, SFX_RATE),
+                         noise_burst(700, SFX_RATE, amplitude=0.18, seed=i))
+                  for i in range(8))),
+        ),
+    }
+    if not dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    made = 0
+    for name, samples in effects.items():
+        path = out_dir / f"{name}.wav"
+        if path.exists() and path.stat().st_size > 0 and not force:
+            continue
+        if dry_run:
+            print(f"  üretilecek: {path.name}")
+        else:
+            write_wav(path, _sfx_params(), samples)
+            print(f"  {path.name}  ({len(samples) / SFX_RATE:.2f} sn)")
+        made += 1
+    return made
+
+
 def _check_produced(path: Path, engine: Engine) -> None:
     if not path.exists() or path.stat().st_size == 0:
         raise EngineError(f"{path.name} üretilemedi (motor: {engine.name})")
@@ -338,6 +389,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"Motor: {engine.name}")
+    print("[sfx]")
+    build_sfx(args.force, args.dry_run)
     total_made = total_skipped = 0
     for lang in languages:
         print(f"[{lang}]")

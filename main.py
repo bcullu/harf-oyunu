@@ -19,13 +19,18 @@ if "--self-check" in sys.argv:
 
 import pygame  # noqa: E402
 
-from app.audio import Voice, init_mixer, sound_key  # noqa: E402
+from app.audio import Voice, init_mixer, phrase_key, sound_key  # noqa: E402
 from app.config import VOLUME_STEP, Config, load_language  # noqa: E402
+from app.game_modes import (CELEBRATE, CORRECT, PROMPT, SAY, SHOW,  # noqa: E402
+                            STAR, STARS_TO_WIN, WRONG, Action,
+                            build_modes)
 from app.render import Renderer  # noqa: E402
 from app.text_tr import upper_for_lang  # noqa: E402
 
 TICK_EVENT = pygame.USEREVENT + 1
 TICK_MS = 33  # ~30 FPS, sadece animasyon/geri sayım sırasında
+AUDIO_EVENT = pygame.USEREVENT + 2
+AUDIO_TICK_MS = 120  # ses kuyruğu yoklaması, sadece kuyrukta ses varken
 ESC_HOLD_MS = 2000  # çocuk yanlışlıkla kapatmasın diye basılı tutma süresi
 
 # Ses seviyesi tuşları (klavye üstü ve numpad)
@@ -56,11 +61,19 @@ class App:
         self._voices: dict[str, Voice] = {}
         self.voice = self._voice_for(self.config.language)
 
+        # Modlar F2 ile sırayla değişir; ilki serbest mod
+        self.modes = build_modes(sorted(self.allowed))
+        self.mode_index = 0
+        self.mode = self.modes[0]
+
         self.running = True
         self.dirty = True
         self._esc_down_at: int | None = None
         self._timer_on = False
-        self._pending_sound: str | None = None
+        self._audio_timer_on = False
+        self._pending_sound: str | None = None   # animasyon bitince çalacak harf
+        self._pending_prompt: str | None = None  # bulunması istenen harf
+        self._sound_queue: list[str] = []
 
     # -- olay işleme -----------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -69,12 +82,18 @@ class App:
         if event.type == pygame.QUIT:
             self.running = False
 
+        elif event.type == AUDIO_EVENT:
+            self._pump_audio()
+
         elif event.type == TICK_EVENT:
+            was_celebrating = self.renderer.celebrating
             was_animating = self.renderer.animating
             self.renderer.update(now)
             # Ses, giriş animasyonu bittikten sonra çalar (önce görüntü, sonra ses)
             if was_animating and not self.renderer.animating:
                 self._flush_pending_sound()
+            if was_celebrating and not self.renderer.celebrating:
+                self._run(self.mode.on_celebration_end(), now)
             if self._esc_down_at is not None:
                 held = now - self._esc_down_at
                 self.renderer.exit_progress = min(1.0, held / ESC_HOLD_MS)
@@ -112,19 +131,64 @@ class App:
             return
         upper = upper_for_lang(char, self.lang.code)
         if upper in self.allowed:
-            self.voice.stop()  # önceki ses kesilsin, üst üste binmesin
-            self.renderer.show_char(upper, now)
-            self._pending_sound = sound_key(upper)
-            self.dirty = True
+            self._reset_audio()  # önceki ses kesilsin, üst üste binmesin
+            self._run(self.mode.on_char(upper), now)
+
+    # -- oyun modları -----------------------------------------------------
+    def _run(self, actions: list[Action], now: int) -> None:
+        """Modun ürettiği eylemleri ekrana ve sese uygular."""
+        for action in actions:
+            if action.kind == SHOW:
+                self.renderer.show_char(action.value, now)
+                self._pending_sound = None
+            elif action.kind == SAY:
+                # Ses, giriş animasyonu bitince çalar
+                self._pending_sound = sound_key(action.value)
+            elif action.kind == PROMPT:
+                self.renderer.set_prompt(
+                    self.lang.ui.get("find_prompt", "{char}").format(char=action.value))
+                self._enqueue(phrase_key("find_letter"), sound_key(action.value))
+            elif action.kind == CORRECT:
+                self._enqueue("sfx_correct", phrase_key("correct"))
+            elif action.kind == WRONG:
+                self._enqueue("sfx_wrong", phrase_key("wrong"))
+            elif action.kind == STAR:
+                self.renderer.set_stars(action.value)
+            elif action.kind == CELEBRATE:
+                self.renderer.set_prompt("")
+                self.renderer.start_celebration(
+                    self.lang.ui.get("celebrate", "★"), now)
+                self._enqueue("sfx_celebrate", phrase_key("celebrate"))
+        self.dirty = True
+
+    def switch_mode(self, now: int) -> None:
+        """F2: modlar arasında geçiş yapar."""
+        self.mode_index = (self.mode_index + 1) % len(self.modes)
+        self.mode = self.modes[self.mode_index]
+        self.renderer.set_prompt("")
+        self.renderer.set_stars(0)
+        self.renderer.set_status(self.lang.ui.get(self.mode.ui_key, self.mode.name))
+        self._pending_sound = None
+        self.mode.set_chars(sorted(self.allowed))
+        self._run(self.mode.enter(), now)
+        self.renderer.set_status(self.lang.ui.get(self.mode.ui_key, self.mode.name))
 
     # -- ebeveyn ayarları -------------------------------------------------
     def _handle_settings_key(self, key: int) -> bool:
         """Ayar tuşunu işler. İşlendiyse True döner. Her değişiklik diske yazılır."""
         if key == pygame.K_F1:
             self.set_language(self.config.toggle_language())
+        elif key == pygame.K_F2:
+            self.switch_mode(pygame.time.get_ticks())
         elif key == pygame.K_F3:
             value = self.config.cycle_char_set()
             self.allowed = set(self.lang.charset(value))
+            actions = []
+            for mode in self.modes:
+                result = mode.set_chars(sorted(self.allowed))
+                if mode is self.mode:  # yalnızca aktif modun eylemleri işlenir
+                    actions = result
+            self._run(actions, pygame.time.get_ticks())
             self._status("char_set_changed", self.lang.ui.get(f"set_{value}", value))
         elif key == pygame.K_F4:
             value = self.config.cycle_font_scale()
@@ -150,8 +214,15 @@ class App:
         self.voice = self._voice_for(code)
         self.renderer.set_hint(self._hint())
         self.renderer.set_status(self.lang.ui.get("language_changed", code))
-        self._pending_sound = None
-        self.voice.play_phrase("language_set")
+        self._reset_audio()
+        for mode in self.modes:
+            mode.set_chars(sorted(self.allowed))
+
+        self.renderer.set_prompt("")
+        self.renderer.set_stars(0)
+        self._enqueue(phrase_key("language_set"))
+        if self.mode.shows_prompt:
+            self._run(self.mode.enter(), pygame.time.get_ticks())
 
     def _voice_for(self, code: str) -> Voice:
         if code not in self._voices:
@@ -169,21 +240,44 @@ class App:
         self.renderer.set_status(template.format(value=value))
 
     # -- ses -------------------------------------------------------------
+    def _reset_audio(self) -> None:
+        """Bekleyen tüm sesleri iptal eder (yeni tuşa basıldığında)."""
+        self._sound_queue.clear()
+        self._pending_sound = None
+        self.voice.stop()
+
+    def _enqueue(self, *keys: str) -> None:
+        self._sound_queue.extend(keys)
+        self._pump_audio()
+
+    def _pump_audio(self) -> None:
+        """Sıradaki sesi, bir önceki bittiyse başlatır."""
+        if self._sound_queue and not self.voice.busy():
+            self.voice.play(self._sound_queue.pop(0))
+
     def _flush_pending_sound(self) -> None:
         if self._pending_sound is not None:
-            self.voice.play(self._pending_sound)
+            self._enqueue(self._pending_sound)
             self._pending_sound = None
 
     # -- zamanlayıcı -----------------------------------------------------
     def _needs_tick(self) -> bool:
         return self.renderer.animating or self._esc_down_at is not None
 
+    def _needs_audio_tick(self) -> bool:
+        return bool(self._sound_queue)
+
     def _sync_timer(self) -> None:
-        """Zamanlayıcıyı yalnızca gerektiğinde açık tutar (boşta CPU ~%0)."""
+        """Zamanlayıcıları yalnızca gerektiğinde açık tutar (boşta CPU ~%0)."""
         need = self._needs_tick()
         if need != self._timer_on:
             pygame.time.set_timer(TICK_EVENT, TICK_MS if need else 0)
             self._timer_on = need
+        # Ses kuyruğu daha seyrek yoklanır; bir ses bitince sıradaki başlar
+        need_audio = self._needs_audio_tick()
+        if need_audio != self._audio_timer_on:
+            pygame.time.set_timer(AUDIO_EVENT, AUDIO_TICK_MS if need_audio else 0)
+            self._audio_timer_on = need_audio
 
     # -- döngü -----------------------------------------------------------
     def draw_if_dirty(self) -> None:
@@ -232,6 +326,25 @@ def self_check() -> int:
                                         unicode="", mod=0))
     print(f"ayarlar OK: dil geçişi tr->en->{app.lang.code}, "
           f"{Config.load(tmp_config).as_dict()}")
+
+    # "Harfi Bul": beş doğru cevap kutlamaya götürmeli
+    app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F2,
+                                        unicode="", mod=0))
+    if not app.mode.shows_prompt:
+        print("HATA: F2 ile Harfi Bul moduna geçilmedi")
+        return 1
+    for _ in range(STARS_TO_WIN):
+        target = app.mode.target
+        app.handle_event(pygame.event.Event(
+            pygame.KEYDOWN, key=0, unicode=target, mod=0))
+    if not app.renderer.celebrating or app.renderer.stars != STARS_TO_WIN:
+        print(f"HATA: {STARS_TO_WIN} doğru cevap sonrası kutlama yok "
+              f"(yıldız: {app.renderer.stars})")
+        return 1
+    app.draw_if_dirty()
+    print(f"oyun modu OK: {STARS_TO_WIN} yıldız -> kutlama")
+    app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F2,
+                                        unicode="", mod=0))
 
     # Ctrl+Q çıkışı
     app.handle_event(pygame.event.Event(

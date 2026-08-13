@@ -80,7 +80,7 @@
     "9": "Nine."
   },
   "phrases": {
-    "find_letter": "Where is {char}? Find it.",
+    "find_letter": "Find this one.",
     "correct": "Well done! That is right.",
     "wrong": "Never mind, try again.",
     "celebrate": "Amazing! You got five stars.",
