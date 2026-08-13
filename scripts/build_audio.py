@@ -56,6 +56,18 @@ INSTALL_HINT = {
 }
 
 
+# data/*.json içindeki metinlerde duraklama işareti. Her motor bunu kendi
+# sözdizimine çevirir; 5 yaş için harf ile örneği arasında belirgin es olsun.
+PAUSE_TOKEN = "|"
+PAUSE_MS = 700
+
+# Konuşma hızı: çocuk için normalden yavaş
+SAY_RATE = 130          # kelime/dakika (macOS varsayılanı ~175)
+ESPEAK_SPEED = 115      # kelime/dakika (espeak varsayılanı 175)
+ESPEAK_WORD_GAP = 12    # 10 ms'lik birimler, kelimeler arası ek boşluk
+PIPER_LENGTH_SCALE = 1.3  # >1 = daha yavaş
+
+
 class EngineError(RuntimeError):
     pass
 
@@ -64,6 +76,10 @@ class Engine:
     name = "?"
 
     def supports(self, lang: str) -> bool:
+        raise NotImplementedError
+
+    def render_pauses(self, text: str) -> str:
+        """PAUSE_TOKEN'ı motorun anladığı duraklamaya çevirir."""
         raise NotImplementedError
 
     def synth(self, text: str, lang: str, out_path: Path) -> None:
@@ -98,8 +114,14 @@ class PiperEngine(Engine):
     def supports(self, lang: str) -> bool:
         return bool(self.binary) and lang in self.models
 
+    def render_pauses(self, text: str) -> str:
+        # piper SSML desteklemez; noktalama ile duraklama sağlanır
+        return text.replace(PAUSE_TOKEN, "...")
+
     def synth(self, text: str, lang: str, out_path: Path) -> None:
         cmd = [self.binary, "--model", str(self.models[lang]),
+               "--length_scale", str(PIPER_LENGTH_SCALE),
+               "--sentence_silence", str(PAUSE_MS / 1000),
                "--output_file", str(out_path)]
         result = subprocess.run(cmd, input=text.encode("utf-8"),
                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -146,8 +168,12 @@ class SayEngine(Engine):
     def supports(self, lang: str) -> bool:
         return bool(self.binary) and lang in self.voices
 
+    def render_pauses(self, text: str) -> str:
+        # say'in gömülü konuşma komutu: [[slnc <ms>]]
+        return text.replace(PAUSE_TOKEN, f"[[slnc {PAUSE_MS}]]")
+
     def synth(self, text: str, lang: str, out_path: Path) -> None:
-        cmd = [self.binary, "-v", self.voices[lang], "-r", "170",
+        cmd = [self.binary, "-v", self.voices[lang], "-r", str(SAY_RATE),
                "--file-format=WAVE", "--data-format=LEI16@22050",
                "-o", str(out_path), text]
         result = subprocess.run(cmd, capture_output=True)
@@ -166,9 +192,14 @@ class EspeakEngine(Engine):
     def supports(self, lang: str) -> bool:
         return bool(self.binary) and lang in LANG_HINTS
 
+    def render_pauses(self, text: str) -> str:
+        # espeak-ng SSML modunda (-m) break etiketini anlar
+        return text.replace(PAUSE_TOKEN, f'<break time="{PAUSE_MS}ms"/>')
+
     def synth(self, text: str, lang: str, out_path: Path) -> None:
-        cmd = [self.binary, "-v", LANG_HINTS[lang]["espeak"],
-               "-s", "140", "-p", "60", "-w", str(out_path), text]
+        cmd = [self.binary, "-m", "-v", LANG_HINTS[lang]["espeak"],
+               "-s", str(ESPEAK_SPEED), "-g", str(ESPEAK_WORD_GAP),
+               "-p", "60", "-w", str(out_path), text]
         result = subprocess.run(cmd, capture_output=True)
         if result.returncode != 0:
             raise EngineError(result.stderr.decode("utf-8", "replace").strip())
@@ -212,7 +243,7 @@ def build(lang_code: str, engine: Engine, force: bool, dry_run: bool) -> tuple[i
             print(f"  [{index}/{len(items)}] üretilecek: {path.name}  <- {text!r}")
             made += 1
             continue
-        engine.synth(text, lang_code, path)
+        engine.synth(engine.render_pauses(text), lang_code, path)
         if not path.exists() or path.stat().st_size == 0:
             raise EngineError(f"{path.name} üretilemedi (motor: {engine.name})")
         made += 1
