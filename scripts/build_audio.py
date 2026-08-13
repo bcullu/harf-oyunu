@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.audio import audio_dir_for, key_for  # noqa: E402
 from app.config import SUPPORTED_LANGUAGES, load_language  # noqa: E402
+from scripts.wav_trim import TrimError, extract_segment  # noqa: E402
 
 # piper ses modellerinin aranacağı dizinler
 PIPER_VOICE_DIRS = (
@@ -57,12 +58,22 @@ INSTALL_HINT = {
 
 
 # data/*.json içindeki metinlerde duraklama işareti. Her motor bunu kendi
-# sözdizimine çevirir; 5 yaş için harf ile örneği arasında belirgin es olsun.
+# sözdizimine çevirir.
 PAUSE_TOKEN = "|"
-PAUSE_MS = 700
+PAUSE_MS = 600
+
+# TTS motorları tek başına verilen "bı", "lı" gibi heceleri bozuk okur. Harf
+# sesleri bu cümlenin içinde sentezlenip virgül duraklamalarından kesilir.
+# {text} iki yanı garantili sessizlikle (PAUSE_TOKEN) çevrelenir, sonra
+# ortadaki parça kesilir. Sadece kesin süreli duraklama üretebilen motorlarda
+# kullanılır; piper cümle içinde böyle bir sessizlik veremez.
+CARRIER = {
+    "tr": "Şu harf | {text} | evet.",
+    "en": "The letter | {text} | yes.",
+}
 
 # Konuşma hızı: çocuk için normalden yavaş
-SAY_RATE = 130          # kelime/dakika (macOS varsayılanı ~175)
+SAY_RATE = 120          # kelime/dakika (macOS varsayılanı ~175)
 ESPEAK_SPEED = 115      # kelime/dakika (espeak varsayılanı 175)
 ESPEAK_WORD_GAP = 12    # 10 ms'lik birimler, kelimeler arası ek boşluk
 PIPER_LENGTH_SCALE = 1.15  # >1 = daha yavaş
@@ -75,6 +86,9 @@ class EngineError(RuntimeError):
 
 class Engine:
     name = "?"
+    # Cümle içinde kesin süreli sessizlik üretebiliyor mu? (taşıyıcı cümle
+    # tekniği buna bağlı: piper üretemez, say ve espeak-ng üretir)
+    exact_pause = False
 
     def supports(self, lang: str) -> bool:
         raise NotImplementedError
@@ -91,6 +105,7 @@ class PiperEngine(Engine):
     """piper-tts: en doğal sonuç, çevrimdışı çalışır."""
 
     name = "piper"
+    exact_pause = False
 
     def __init__(self):
         # venv içine kurulmuşsa PATH'te olmayabilir; yorumlayıcının yanına da bak
@@ -137,6 +152,7 @@ class SayEngine(Engine):
     """macOS yerleşik `say` komutu."""
 
     name = "say"
+    exact_pause = True
 
     def __init__(self):
         self.binary = shutil.which("say") if platform.system() == "Darwin" else None
@@ -189,6 +205,7 @@ class EspeakEngine(Engine):
     """espeak-ng: her yerde bulunur, sesi robotik ama iş görür."""
 
     name = "espeak-ng"
+    exact_pause = True
 
     def __init__(self):
         self.binary = shutil.which("espeak-ng") or shutil.which("espeak")
@@ -220,6 +237,12 @@ def pick_engine(languages: list[str], forced: str | None = None) -> Engine | Non
     return None
 
 
+def carrier_keys(lang_code: str) -> set[str]:
+    """Taşıyıcı cümle içinde üretilecek anahtarlar (harfler ve rakamlar)."""
+    data = load_language(lang_code)
+    return {key_for(char) for char in data.charset("both")}
+
+
 def texts_for(lang_code: str) -> dict[str, str]:
     """Ses anahtarı -> seslendirilecek metin."""
     data = load_language(lang_code)
@@ -231,28 +254,51 @@ def texts_for(lang_code: str) -> dict[str, str]:
     return items
 
 
-def build(lang_code: str, engine: Engine, force: bool, dry_run: bool) -> tuple[int, int]:
+def build(lang_code: str, engine: Engine, force: bool, dry_run: bool,
+          use_carrier: bool = True) -> tuple[int, int]:
     """(üretilen, atlanan) sayısını döndürür."""
     out_dir = audio_dir_for(lang_code)
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
     made = skipped = 0
     items = texts_for(lang_code)
+    carriers = (carrier_keys(lang_code)
+                if use_carrier and engine.exact_pause else set())
     for index, (key, text) in enumerate(sorted(items.items()), start=1):
         path = out_dir / f"{key}.wav"
         if path.exists() and path.stat().st_size > 0 and not force:
             skipped += 1
             continue
+        spoken = text
+        if key in carriers:
+            spoken = CARRIER[lang_code].format(text=text)
         if dry_run:
-            print(f"  [{index}/{len(items)}] üretilecek: {path.name}  <- {text!r}")
+            print(f"  [{index}/{len(items)}] üretilecek: {path.name}  <- {spoken!r}")
             made += 1
             continue
-        engine.synth(engine.render_pauses(text), lang_code, path)
-        if not path.exists() or path.stat().st_size == 0:
-            raise EngineError(f"{path.name} üretilemedi (motor: {engine.name})")
+
+        if key in carriers:
+            raw = path.with_suffix(".raw.wav")
+            engine.synth(engine.render_pauses(spoken), lang_code, raw)
+            _check_produced(raw, engine)
+            try:
+                trimmed = extract_segment(raw, path, index=1, expected=3)
+            except TrimError as exc:
+                raise EngineError(f"{path.name}: {exc}") from exc
+            raw.unlink()
+            note = "" if trimmed else "  (UYARI: parça bulunamadı, tam cümle)"
+        else:
+            engine.synth(engine.render_pauses(spoken), lang_code, path)
+            note = ""
+        _check_produced(path, engine)
         made += 1
-        print(f"  [{index}/{len(items)}] {path.name}")
+        print(f"  [{index}/{len(items)}] {path.name}{note}")
     return made, skipped
+
+
+def _check_produced(path: Path, engine: Engine) -> None:
+    if not path.exists() or path.stat().st_size == 0:
+        raise EngineError(f"{path.name} üretilemedi (motor: {engine.name})")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -265,6 +311,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Var olan wav'ları yeniden üret")
     parser.add_argument("--dry-run", action="store_true",
                         help="Üretme, sadece listele")
+    parser.add_argument("--no-carrier", action="store_true",
+                        help="Taşıyıcı cümle kullanma, sesi doğrudan üret")
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
     languages = list(SUPPORTED_LANGUAGES) if args.lang == "all" else [args.lang]
@@ -282,7 +330,8 @@ def main(argv: list[str] | None = None) -> int:
     for lang in languages:
         print(f"[{lang}]")
         try:
-            made, skipped = build(lang, engine, args.force, args.dry_run)
+            made, skipped = build(lang, engine, args.force, args.dry_run,
+                                  use_carrier=not args.no_carrier)
         except EngineError as exc:
             print(f"Ses üretimi başarısız ({engine.name}): {exc}", file=sys.stderr)
             return 1
