@@ -92,6 +92,14 @@
     "find_prompt": "Find: {char}",
     "stars": "Stars",
     "exit_hint": "Hold ESC to quit",
-    "celebrate": "AMAZING!"
+    "celebrate": "AMAZING!",
+    "settings_hint": "F1 language · F2 mode · F3 character set · F4 text size · +/− volume",
+    "language_changed": "Language: English",
+    "volume_changed": "Volume: {value}%",
+    "char_set_changed": "Character set: {value}",
+    "font_scale_changed": "Text size: {value}%",
+    "set_letters": "letters only",
+    "set_digits": "digits only",
+    "set_both": "letters and digits"
   }
 }

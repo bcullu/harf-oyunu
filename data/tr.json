@@ -98,6 +98,14 @@
     "find_prompt": "Bul: {char}",
     "stars": "Yıldız",
     "exit_hint": "Çıkmak için ESC tuşunu basılı tut",
-    "celebrate": "HARİKASIN!"
+    "celebrate": "HARİKASIN!",
+    "settings_hint": "F1 dil · F2 mod · F3 harf seti · F4 yazı boyutu · +/− ses",
+    "language_changed": "Dil: Türkçe",
+    "volume_changed": "Ses seviyesi: %{value}",
+    "char_set_changed": "Harf seti: {value}",
+    "font_scale_changed": "Yazı boyutu: %{value}",
+    "set_letters": "sadece harfler",
+    "set_digits": "sadece rakamlar",
+    "set_both": "harf ve rakam"
   }
 }

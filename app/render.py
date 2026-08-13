@@ -11,6 +11,7 @@ import pygame
 
 BACKGROUND = (16, 16, 24)
 HINT_COLOR = (90, 90, 110)
+STATUS_COLOR = (170, 170, 200)
 EXIT_BAR_COLOR = (220, 80, 80)
 
 # Türkçe glifleri (ğ, İ, ş, ...) içermesi muhtemel font adayları
@@ -64,6 +65,7 @@ class Renderer:
         self._hint_font = self._make_font(max(14, screen.get_height() // 32))
 
         self.current_char: str | None = None
+        self.status_text = ""  # ayar değişince üstte görünen kısa bilgi
         self._color = PALETTE[0]
         self._glyph: pygame.Surface | None = None
         self._anim_start_ms = 0
@@ -83,9 +85,14 @@ class Renderer:
             self._render_glyph()
 
     # -- içerik ----------------------------------------------------------
+    def set_status(self, text: str) -> None:
+        """Ayar değişikliğini üstte gösterir; sonraki harfte kendiliğinden silinir."""
+        self.status_text = text
+
     def show_char(self, char: str, now_ms: int) -> None:
         """Yeni karakteri gösterir ve giriş animasyonunu başlatır."""
         self.current_char = char
+        self.status_text = ""
         new_color = random.choice([c for c in PALETTE if c != self._color])
         self._color = new_color
         self._render_glyph()
@@ -131,10 +138,17 @@ class Renderer:
             self.screen.blit(surf, rect)
 
         self._draw_hint()
+        if self.status_text:
+            self._draw_status()
         if self.exit_progress > 0:
             self._draw_exit_bar()
 
         pygame.display.flip()
+
+    def _draw_status(self) -> None:
+        text = self._hint_font.render(self.status_text, True, STATUS_COLOR)
+        rect = text.get_rect(midtop=(self.screen.get_width() // 2, 16))
+        self.screen.blit(text, rect)
 
     def _draw_hint(self) -> None:
         text = self._hint_font.render(self._hint_text, True, HINT_COLOR)
