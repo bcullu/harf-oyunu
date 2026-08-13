@@ -237,7 +237,8 @@ def test_f2_switches_between_modes(app):
 def test_entering_find_mode_asks_for_a_letter(app):
     mode = enter_find_mode(app)
     assert mode.target in app.allowed
-    assert mode.target in app.renderer.prompt_text
+    assert app.renderer.target_char == mode.target
+    assert app.renderer.split is True  # ekran ikiye ayrıldı
     app.draw_if_dirty()
 
 
@@ -253,6 +254,7 @@ def test_wrong_answer_costs_nothing(app):
     wrong = next(c for c in app.allowed if c != target and c.isalpha())
     app.handle_event(key_event(wrong))
     assert app.renderer.stars == 0
+    assert app.renderer.target_char == target  # hedef ekranda kalır
     assert app.mode.target == target        # hedef korunur
     assert app.renderer.current_char == wrong  # basılan harf yine de görünür
 
@@ -295,7 +297,8 @@ def test_celebration_keeps_timer_running(app, monkeypatch):
 
 def test_free_mode_has_no_prompt_or_stars(app):
     app.handle_event(key_event("a"))
-    assert app.renderer.prompt_text == ""
+    assert app.renderer.target_char is None
+    assert app.renderer.split is False
     assert app.renderer.stars == 0
 
 
@@ -304,7 +307,8 @@ def test_switching_mode_clears_game_state(app):
     app.handle_event(key_event(mode.target))
     app.handle_event(fkey(pygame.K_F2))  # serbest moda dön
     assert app.renderer.stars == 0
-    assert app.renderer.prompt_text == ""
+    assert app.renderer.target_char is None
+    assert app.renderer.split is False
 
 
 def test_char_set_change_gives_target_from_new_set(app):
@@ -319,6 +323,58 @@ def test_sound_queue_runs_dry_and_stops_its_timer(app):
     assert app._needs_audio_tick() is True   # hedef anonsu kuyrukta
     app._sound_queue.clear()
     assert app._needs_audio_tick() is False  # kuyruk boşalınca zamanlayıcı kapanır
+
+
+def test_stars_are_actually_drawn(app):
+    """Yıldızlar fontla değil poligonla çizilir (★ glifi çoğu fontta yok)."""
+    from app.render import STAR_COLOR
+
+    def gold_pixels():
+        app.dirty = True
+        app.draw_if_dirty()
+        surface = app.screen
+        return sum(1 for x in range(0, surface.get_width(), 3)
+                   for y in range(surface.get_height() // 2, surface.get_height(), 3)
+                   if surface.get_at((x, y))[:3] == STAR_COLOR)
+
+    mode = enter_find_mode(app)
+    assert gold_pixels() == 0          # henüz yıldız yok
+    app.handle_event(key_event(mode.target))
+    assert app.renderer.stars == 1
+    assert gold_pixels() > 20          # dolu yıldız ekranda
+
+
+def test_split_layout_draws_both_sides(app):
+    from app.render import TARGET_COLOR
+
+    mode = enter_find_mode(app)
+    wrong = next(c for c in app.allowed if c != mode.target and c.isalpha())
+    app.handle_event(key_event(wrong))
+    app.dirty = True
+    app.draw_if_dirty()
+    surface = app.screen
+    middle = surface.get_width() // 2
+    # ölçekleme kenar yumuşatma yaptığı için renk birebir eşleşmez
+    def near_target(pixel):
+        return all(abs(pixel[i] - TARGET_COLOR[i]) <= 12 for i in range(3))
+
+    left = sum(1 for x in range(0, middle, 3) for y in range(0, surface.get_height(), 3)
+               if near_target(surface.get_at((x, y))[:3]))
+    right = sum(1 for x in range(middle, surface.get_width(), 3)
+                for y in range(0, surface.get_height(), 3)
+                if surface.get_at((x, y))[:3] != (16, 16, 24))
+    assert left > 20   # solda hedef harf
+    assert right > 20  # sağda çocuğun bastığı harf
+
+
+def test_turkish_diacritics_are_not_clipped(app):
+    """pygame.font Ğ/İ'nin şapkasını kırpıyordu; freetype kırpmamalı."""
+    plain = app.renderer._render("G", (255, 255, 255))
+    breve = app.renderer._render("Ğ", (255, 255, 255))
+    dotted = app.renderer._render("İ", (255, 255, 255))
+    plain_i = app.renderer._render("I", (255, 255, 255))
+    assert breve.get_height() > plain.get_height(), "Ğ'nin şapkası kırpılmış"
+    assert dotted.get_height() > plain_i.get_height(), "İ'nin noktası kırpılmış"
 
 
 def test_self_check_passes():

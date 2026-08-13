@@ -89,7 +89,6 @@
   "ui": {
     "free_mode": "Free Play",
     "find_mode": "Find the Letter",
-    "find_prompt": "Find: {char}",
     "stars": "Stars",
     "exit_hint": "Hold ESC to quit",
     "celebrate": "AMAZING!",
@@ -100,6 +99,8 @@
     "font_scale_changed": "Text size: {value}%",
     "set_letters": "letters only",
     "set_digits": "digits only",
-    "set_both": "letters and digits"
+    "set_both": "letters and digits",
+    "label_target": "FIND THIS",
+    "label_you": "YOU"
   }
 }

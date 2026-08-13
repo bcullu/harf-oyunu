@@ -145,8 +145,9 @@ class App:
                 # Ses, giriş animasyonu bitince çalar
                 self._pending_sound = sound_key(action.value)
             elif action.kind == PROMPT:
-                self.renderer.set_prompt(
-                    self.lang.ui.get("find_prompt", "{char}").format(char=action.value))
+                if self.renderer.target_char != action.value:
+                    self.renderer.clear_char()  # yeni tur: sağ taraf boşalsın
+                self.renderer.set_target(action.value)
                 self._enqueue(phrase_key("find_letter"), sound_key(action.value))
             elif action.kind == CORRECT:
                 self._enqueue("sfx_correct", phrase_key("correct"))
@@ -155,7 +156,7 @@ class App:
             elif action.kind == STAR:
                 self.renderer.set_stars(action.value)
             elif action.kind == CELEBRATE:
-                self.renderer.set_prompt("")
+                self.renderer.set_target(None)
                 self.renderer.start_celebration(
                     self.lang.ui.get("celebrate", "★"), now)
                 self._enqueue("sfx_celebrate", phrase_key("celebrate"))
@@ -165,8 +166,9 @@ class App:
         """F2: modlar arasında geçiş yapar."""
         self.mode_index = (self.mode_index + 1) % len(self.modes)
         self.mode = self.modes[self.mode_index]
-        self.renderer.set_prompt("")
-        self.renderer.set_stars(0)
+        self.renderer.clear_char()
+        self.renderer.set_layout(self.mode.shows_prompt, self._labels())
+        self.renderer.set_stars(0, STARS_TO_WIN)
         self.renderer.set_status(self.lang.ui.get(self.mode.ui_key, self.mode.name))
         self._pending_sound = None
         self.mode.set_chars(sorted(self.allowed))
@@ -218,8 +220,8 @@ class App:
         for mode in self.modes:
             mode.set_chars(sorted(self.allowed))
 
-        self.renderer.set_prompt("")
-        self.renderer.set_stars(0)
+        self.renderer.set_layout(self.mode.shows_prompt, self._labels())
+        self.renderer.set_stars(0, STARS_TO_WIN)
         self._enqueue(phrase_key("language_set"))
         if self.mode.shows_prompt:
             self._run(self.mode.enter(), pygame.time.get_ticks())
@@ -228,6 +230,11 @@ class App:
         if code not in self._voices:
             self._voices[code] = Voice(code, volume=self.config.volume)
         return self._voices[code]
+
+    def _labels(self) -> tuple[str, str]:
+        """Bölünmüş ekranın sol/sağ başlıkları."""
+        return (self.lang.ui.get("label_target", ""),
+                self.lang.ui.get("label_you", ""))
 
     def _hint(self) -> str:
         """Alt satırdaki ebeveyn bilgisi: çıkış ve ayar kısayolları."""

@@ -95,7 +95,6 @@
   "ui": {
     "free_mode": "Serbest Mod",
     "find_mode": "Harfi Bul",
-    "find_prompt": "Bul: {char}",
     "stars": "Yıldız",
     "exit_hint": "Çıkmak için ESC tuşunu basılı tut",
     "celebrate": "HARİKASIN!",
@@ -106,6 +105,8 @@
     "font_scale_changed": "Yazı boyutu: %{value}",
     "set_letters": "sadece harfler",
     "set_digits": "sadece rakamlar",
-    "set_both": "harf ve rakam"
+    "set_both": "harf ve rakam",
+    "label_target": "BUNU BUL",
+    "label_you": "SEN"
   }
 }
