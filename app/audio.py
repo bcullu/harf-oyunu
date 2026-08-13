@@ -111,7 +111,10 @@ def init_mixer() -> bool:
     import pygame
 
     try:
-        pygame.mixer.pre_init(22050, -16, 1, 512)
+        # Tampon büyüdükçe ses geri çağırması seyrekleşir ve CPU düşer
+        # (512 -> 1024 ölçümde ~%0.4 kazandırdı). 1024 örnek = ~46 ms gecikme,
+        # harf sesi zaten animasyondan sonra çaldığı için fark edilmez.
+        pygame.mixer.pre_init(22050, -16, 1, 1024)
         pygame.mixer.init()
         return True
     except Exception:

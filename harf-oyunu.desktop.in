@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Harf Oyunu
+Name[en]=Letter Game
+Comment=Harf ve rakam tanıma oyunu
+Comment[en]=Letter and number recognition game
+Exec=__INSTALL_DIR__/.venv/bin/python __INSTALL_DIR__/main.py
+Path=__INSTALL_DIR__
+Icon=__INSTALL_DIR__/icon.png
+Terminal=false
+Categories=Education;Game;KidsGame;
+Keywords=harf;alfabe;rakam;çocuk;letter;alphabet;
+StartupNotify=true
