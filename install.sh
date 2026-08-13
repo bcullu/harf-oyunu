@@ -26,19 +26,48 @@ fi
 info "Python: $("$PYTHON" -V)"
 
 # 2. Sanal ortam -------------------------------------------------------------
-if [ ! -x "$VENV/bin/python" ]; then
+# Yalnızca .venv/bin/python'a bakmak yetmez: python3-venv kurulu değilken
+# ortam yarım kalıyor (python var, pip yok). pip'i de sınayıp gerekirse
+# ortamı baştan kuruyoruz.
+venv_ok() {
+    [ -x "$VENV/bin/python" ] \
+        && "$VENV/bin/python" -m pip --version >/dev/null 2>&1
+}
+
+apt_hint() {
+    error "$1"
+    echo "    sudo apt install python3-venv python3-pip     # Debian/Ubuntu"
+    echo "    sudo dnf install python3-virtualenv python3-pip  # Fedora"
+}
+
+if venv_ok; then
+    info "Sanal ortam zaten var, kullanılıyor"
+else
+    if [ -e "$VENV" ]; then
+        warn "Sanal ortam eksik ya da bozuk, yeniden kuruluyor"
+        rm -rf "$VENV"
+    fi
     info "Sanal ortam oluşturuluyor: .venv"
     if ! "$PYTHON" -m venv "$VENV"; then
-        error "venv oluşturulamadı. Debian/Ubuntu'da: sudo apt install python3-venv"
+        apt_hint "venv oluşturulamadı. Eksik paketi kurup tekrar deneyin:"
         exit 1
     fi
-else
-    info "Sanal ortam zaten var, kullanılıyor"
+    # Bazı dağıtımlarda venv pip'siz kurulabiliyor; kurtarmayı deneyelim
+    venv_ok || "$VENV/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+    if ! venv_ok; then
+        apt_hint "Sanal ortamda pip yok. Eksik paketi kurup tekrar deneyin:"
+        exit 1
+    fi
 fi
 
 info "pygame-ce kuruluyor"
-"$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install --quiet -r "$INSTALL_DIR/requirements.txt"
+# 'pip' betiği yerine 'python -m pip': yolu bozuk ortamlarda da çalışır
+"$VENV/bin/python" -m pip install --quiet --upgrade pip
+if ! "$VENV/bin/python" -m pip install --quiet -r "$INSTALL_DIR/requirements.txt"; then
+    error "pygame-ce kurulamadı. İnternet bağlantısını kontrol edin."
+    echo "    Derleme hatası alıyorsanız: sudo apt install python3-dev build-essential"
+    exit 1
+fi
 
 # 3. Sesler ------------------------------------------------------------------
 # Sesler depoyla birlikte geldiği için normalde üretim gerekmez.
