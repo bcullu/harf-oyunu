@@ -102,5 +102,24 @@ def test_timer_only_runs_during_animation(app, monkeypatch):
     assert calls[-1] == 0  # animasyon bitince kapandı
 
 
+def test_sound_plays_after_animation(app, monkeypatch):
+    played = []
+    monkeypatch.setattr(app.voice, "play", lambda key: played.append(key) or True)
+    now = [5000]
+    monkeypatch.setattr(pygame.time, "get_ticks", lambda: now[0])
+
+    app.handle_event(key_event("ğ"))
+    assert played == []  # animasyon sürerken ses yok
+    assert app._pending_sound == "char_011e"
+
+    now[0] += 500
+    app.handle_event(pygame.event.Event(TICK_EVENT))
+    assert played == ["char_011e"]  # animasyon bitince çaldı
+
+    now[0] += 500
+    app.handle_event(pygame.event.Event(TICK_EVENT))
+    assert played == ["char_011e"]  # tekrar çalmaz
+
+
 def test_self_check_passes():
     assert main_module.self_check() == 0

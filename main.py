@@ -18,6 +18,7 @@ if "--self-check" in sys.argv:
 
 import pygame  # noqa: E402
 
+from app.audio import Voice, init_mixer, sound_key  # noqa: E402
 from app.config import load_language  # noqa: E402
 from app.render import Renderer  # noqa: E402
 from app.text_tr import upper_for_lang  # noqa: E402
@@ -29,7 +30,8 @@ ESC_HOLD_MS = 2000  # çocuk yanlışlıkla kapatmasın diye basılı tutma sür
 
 class App:
     def __init__(self, lang_code: str = "tr", fullscreen: bool = True,
-                 char_set: str = "both", size: tuple[int, int] = (960, 600)):
+                 char_set: str = "both", size: tuple[int, int] = (960, 600),
+                 volume: float = 0.9):
         self.lang = load_language(lang_code)
         self.char_set = char_set
         self.allowed = set(self.lang.charset(char_set))
@@ -43,10 +45,14 @@ class App:
         self.renderer = Renderer(self.screen)
         self.renderer.set_hint(self.lang.ui.get("exit_hint", ""))
 
+        # Sesler önceden üretilmiş wav'lardan gelir; yoksa oyun sessiz çalışır
+        self.voice = Voice(lang_code, volume=volume)
+
         self.running = True
         self.dirty = True
         self._esc_down_at: int | None = None
         self._timer_on = False
+        self._pending_sound: str | None = None
 
     # -- olay işleme -----------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -56,7 +62,11 @@ class App:
             self.running = False
 
         elif event.type == TICK_EVENT:
+            was_animating = self.renderer.animating
             self.renderer.update(now)
+            # Ses, giriş animasyonu bittikten sonra çalar (önce görüntü, sonra ses)
+            if was_animating and not self.renderer.animating:
+                self._flush_pending_sound()
             if self._esc_down_at is not None:
                 held = now - self._esc_down_at
                 self.renderer.exit_progress = min(1.0, held / ESC_HOLD_MS)
@@ -91,8 +101,16 @@ class App:
             return
         upper = upper_for_lang(char, self.lang.code)
         if upper in self.allowed:
+            self.voice.stop()  # önceki ses kesilsin, üst üste binmesin
             self.renderer.show_char(upper, now)
+            self._pending_sound = sound_key(upper)
             self.dirty = True
+
+    # -- ses -------------------------------------------------------------
+    def _flush_pending_sound(self) -> None:
+        if self._pending_sound is not None:
+            self.voice.play(self._pending_sound)
+            self._pending_sound = None
 
     # -- zamanlayıcı -----------------------------------------------------
     def _needs_tick(self) -> bool:
@@ -123,6 +141,7 @@ class App:
 
 def self_check() -> int:
     """Başlatma + sentetik tuş olaylarıyla temel akışı doğrular."""
+    init_mixer()
     pygame.init()
     app = App(lang_code="tr", fullscreen=False, size=(640, 480))
     cases = [("ğ", "Ğ"), ("i", "İ"), ("ı", "I"), ("5", "5"), ("ş", "Ş")]
@@ -141,6 +160,16 @@ def self_check() -> int:
     if app.running:
         print("HATA: Ctrl+Q ile çıkılmadı")
         return 1
+
+    # Ses varlığı: eksikse uyar ama başarısız sayma (sesler ayrı üretiliyor)
+    missing = [ch for ch in app.lang.charset("both")
+               if sound_key(ch) not in app.voice.sounds]
+    if missing:
+        print(f"UYARI: {len(missing)} karakterin sesi yok "
+              f"(ör. {' '.join(missing[:5])}). Çözüm: "
+              f"python scripts/build_audio.py")
+    else:
+        print(f"ses OK: {len(app.voice.sounds)} wav yüklendi ({app.lang.code})")
 
     pygame.quit()
     print("self-check OK: " + ", ".join(f"{t}->{e}" for t, e in cases))
@@ -162,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_check:
         return self_check()
 
+    init_mixer()  # pygame.init()'ten önce: tampon boyutu gecikmeyi belirler
     pygame.init()
     try:
         App(lang_code=args.lang, fullscreen=not args.windowed).run()
