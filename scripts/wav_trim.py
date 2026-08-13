@@ -108,3 +108,66 @@ def extract_segment(src: Path, dest: Path, index: int = 1,
     end = min(len(samples), end + pad)
     write_wav(dest, params, samples[start:end])
     return True
+
+
+# --- zaman germe (perde bozulmadan uzatma) ---------------------------------
+# say/espeak belirli bir hızın altına inmiyor. Kesilen hece bu yüzden üretim
+# sonrası WSOLA ile uzatılır: ses tizleşmez, sadece yavaşlar.
+
+STRETCH_FRAME_MS = 30    # analiz penceresi
+STRETCH_SEARCH_MS = 6    # en iyi örtüşmenin arandığı bölge
+CORRELATION_STEP = 4     # benzerlik hesabında örnek atlama (hız için)
+
+
+def _hann(size: int) -> list[float]:
+    import math
+    return [0.5 - 0.5 * math.cos(2 * math.pi * i / (size - 1)) for i in range(size)]
+
+
+def _best_offset(samples: array.array, target: array.array,
+                 center: int, search: int, length: int) -> int:
+    """Hedef parçaya en çok benzeyen konumu ±search içinde arar."""
+    best_score, best = None, 0
+    for delta in range(-search, search + 1):
+        start = center + delta
+        if start < 0 or start + length > len(samples):
+            continue
+        score = sum(samples[start + i] * target[i]
+                    for i in range(0, length, CORRELATION_STEP))
+        if best_score is None or score > best_score:
+            best_score, best = score, delta
+    return best
+
+
+def time_stretch(samples: array.array, rate: int, factor: float) -> array.array:
+    """Sesi `factor` katı uzatır (factor > 1 = daha yavaş). Perde değişmez."""
+    if factor <= 1.0 or len(samples) < rate // 20:
+        return samples
+    frame = max(64, rate * STRETCH_FRAME_MS // 1000)
+    hop_out = frame // 2
+    hop_in = max(1, int(hop_out / factor))
+    search = rate * STRETCH_SEARCH_MS // 1000
+    window = _hann(frame)
+
+    out = [0.0] * (int(len(samples) * factor) + frame)
+    out_pos = 0
+    read_pos = 0
+    index = 0
+    while read_pos + frame + search < len(samples):
+        if index > 0:
+            # önceki karenin doğal devamına en çok benzeyen yeri bul
+            target = samples[read_pos + hop_out:read_pos + hop_out + hop_out]
+            nominal = index * hop_in
+            offset = _best_offset(samples, target, nominal, search, len(target))
+            read_pos = max(0, nominal + offset)
+            if read_pos + frame >= len(samples):
+                break
+        for i in range(frame):
+            out[out_pos + i] += samples[read_pos + i] * window[i]
+        out_pos += hop_out
+        index += 1
+
+    result = array.array("h")
+    for value in out[:out_pos + hop_out]:
+        result.append(max(-32768, min(32767, int(value))))
+    return result

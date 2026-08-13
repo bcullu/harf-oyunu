@@ -25,7 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.audio import audio_dir_for, key_for  # noqa: E402
 from app.config import SUPPORTED_LANGUAGES, load_language  # noqa: E402
-from scripts.wav_trim import TrimError, extract_segment  # noqa: E402
+from scripts.wav_trim import (TrimError, extract_segment, read_wav,  # noqa: E402
+                              time_stretch, write_wav)
 
 # piper ses modellerinin aranacağı dizinler
 PIPER_VOICE_DIRS = (
@@ -73,11 +74,16 @@ CARRIER = {
 }
 
 # Konuşma hızı: çocuk için normalden yavaş
-SAY_RATE = 120          # kelime/dakika (macOS varsayılanı ~175)
+SAY_RATE = 90           # kelime/dakika (macOS varsayılanı ~175), çocuk için yavaş
 ESPEAK_SPEED = 115      # kelime/dakika (espeak varsayılanı 175)
 ESPEAK_WORD_GAP = 12    # 10 ms'lik birimler, kelimeler arası ek boşluk
 PIPER_LENGTH_SCALE = 1.15  # >1 = daha yavaş
 PIPER_TRAILING_SILENCE = 0.2  # saniye, ses sonundaki sessizlik
+
+# TTS motorları belli bir hızın altına inmiyor (say 25 wpm'de bile hece
+# ~0.3 sn). Harf sesleri bu yüzden üretimden sonra perde bozulmadan
+# uzatılır. 1.0 = germe yok.
+STRETCH_FACTOR = 1.6
 
 
 class EngineError(RuntimeError):
@@ -262,8 +268,8 @@ def build(lang_code: str, engine: Engine, force: bool, dry_run: bool,
         out_dir.mkdir(parents=True, exist_ok=True)
     made = skipped = 0
     items = texts_for(lang_code)
-    carriers = (carrier_keys(lang_code)
-                if use_carrier and engine.exact_pause else set())
+    char_keys = carrier_keys(lang_code)
+    carriers = char_keys if use_carrier and engine.exact_pause else set()
     for index, (key, text) in enumerate(sorted(items.items()), start=1):
         path = out_dir / f"{key}.wav"
         if path.exists() and path.stat().st_size > 0 and not force:
@@ -291,6 +297,12 @@ def build(lang_code: str, engine: Engine, force: bool, dry_run: bool,
             engine.synth(engine.render_pauses(spoken), lang_code, path)
             note = ""
         _check_produced(path, engine)
+
+        # Harf/rakam sesleri çocuğun ayırt edebilmesi için yavaşlatılır
+        if key in char_keys and STRETCH_FACTOR > 1.0:
+            params, samples = read_wav(path)
+            write_wav(path, params, time_stretch(samples, params.framerate,
+                                                 STRETCH_FACTOR))
         made += 1
         print(f"  [{index}/{len(items)}] {path.name}{note}")
     return made, skipped

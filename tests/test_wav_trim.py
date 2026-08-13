@@ -78,3 +78,27 @@ def test_rejects_stereo(tmp_path):
         wav.writeframes(tone(100).tobytes())
     with pytest.raises(TrimError):
         read_wav(path)
+
+
+# --- zaman germe ------------------------------------------------------------
+
+def test_time_stretch_lengthens_without_changing_format(tmp_path):
+    from scripts.wav_trim import time_stretch
+    samples = tone(400)
+    stretched = time_stretch(samples, RATE, 1.6)
+    ratio = len(stretched) / len(samples)
+    assert 1.4 <= ratio <= 1.8, f"beklenen ~1.6 kat, gelen {ratio:.2f}"
+    assert stretched.typecode == "h"
+    assert max(abs(s) for s in stretched) <= 32767
+
+
+def test_time_stretch_is_noop_for_factor_one():
+    from scripts.wav_trim import time_stretch
+    samples = tone(300)
+    assert time_stretch(samples, RATE, 1.0) is samples
+
+
+def test_time_stretch_skips_very_short_audio():
+    from scripts.wav_trim import time_stretch
+    samples = tone(20)  # 20 ms: germek anlamsız
+    assert len(time_stretch(samples, RATE, 2.0)) == len(samples)
