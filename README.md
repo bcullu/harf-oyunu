@@ -276,3 +276,12 @@ Linux'ta SDL'in X11 arka ucu display soketinde gerçek bloklama yaptığı için
 bu maliyetin çıkmaması bekleniyor; hedef makinede yukarıdaki betikle
 doğrulayın. Yüksek çıkarsa 50 ms'lik uyku + `event.poll()` hibrit döngüsü
 ölçümde %0.5 veriyor (tuş gecikmesi en fazla 50 ms).
+
+---
+
+## Aynı depodaki ikinci oyun: Bayrak Hırsızı
+
+`bayrak_oyunu/` klasöründe, yine 5 yaş için, okuma gerektirmeyen bir bayrak
+öğrenme oyunu var: izometrik pixel art bir odada örümcek bekçiden saklanıp
+bayrağı çalırsınız, kazanılan ülke Türkçe seslendirilip panoya eklenir.
+Kurulum ve oynanış için [bayrak_oyunu/README.md](bayrak_oyunu/README.md).

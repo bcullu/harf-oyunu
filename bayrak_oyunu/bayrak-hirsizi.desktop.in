@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Bayrak Hırsızı
+Name[en]=Flag Thief
+Comment=Ülke bayraklarını öğreten gizlenme oyunu
+Comment[en]=Learn country flags in a sneaking game
+Exec=__INSTALL_DIR__/.venv/bin/python __INSTALL_DIR__/main.py
+Path=__INSTALL_DIR__
+Icon=__INSTALL_DIR__/icon.png
+Terminal=false
+Categories=Education;Game;KidsGame;
+Keywords=bayrak;ülke;çocuk;flag;country;
+StartupNotify=true

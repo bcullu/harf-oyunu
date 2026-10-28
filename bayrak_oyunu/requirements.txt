@@ -1,0 +1,5 @@
+pygame-ce>=2.4
+
+# Yalnızca kurulumda ses üretmek için gerekir; çalışma anında kullanılmaz.
+#   macOS : `say` komutu zaten vardır (Türkçe ses: Yelda)
+#   Linux : sudo apt install espeak-ng
