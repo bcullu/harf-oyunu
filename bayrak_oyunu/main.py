@@ -51,13 +51,34 @@ SFX_FOR_EVENT = {
 }
 
 
+def open_screen(fullscreen: bool, size=(1280, 720)) -> "pygame.Surface":
+    """Pencereyi açar; açamazsa daha güvenli bir kipe düşer.
+
+    SCALED kullanılmıyor: ölçeklemeyi Renderer.present() zaten tam sayı
+    katıyla kendisi yapıyor ve bazı SDL/pygame sürümleri SCALED ile (0, 0)
+    boyutunu reddedip "Cannot set 0 size SCALED display mode" diyor.
+    """
+    if not fullscreen:
+        return pygame.display.set_mode(size)
+    try:
+        return pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    except pygame.error:
+        pass
+    info = pygame.display.Info()          # masaüstü çözünürlüğünü açıkça ver
+    desktop = (info.current_w, info.current_h)
+    if desktop[0] > 0 and desktop[1] > 0:
+        try:
+            return pygame.display.set_mode(desktop, pygame.FULLSCREEN)
+        except pygame.error:
+            pass
+    return pygame.display.set_mode(size)  # son çare: pencerede çalış
+
+
 class App:
     def __init__(self, fullscreen: bool = True, size=(1280, 720),
                  seed: int | None = None):
         self.progress = Progress.load()
-        flags_mode = pygame.FULLSCREEN | pygame.SCALED if fullscreen else 0
-        self.screen = pygame.display.set_mode((0, 0) if fullscreen else size,
-                                              flags_mode)
+        self.screen = open_screen(fullscreen, size)
         pygame.display.set_caption("Bayrak Hırsızı")
         pygame.mouse.set_visible(False)
 

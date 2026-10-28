@@ -129,3 +129,30 @@ def test_main_in_istedigi_her_ses_uretiliyor():
     for key in main.SFX_FOR_EVENT.values():
         assert key in effects
     assert "sfx_move" in effects
+
+
+def test_tam_ekran_scaled_istemez(screen):
+    """SCALED + (0, 0) bazı SDL sürümlerinde hata veriyordu.
+
+    "Cannot set 0 size SCALED display mode": ölçeklemeyi present() zaten
+    kendisi yaptığı için SCALED'a hiç gerek yok.
+    """
+    import pathlib
+
+    import main
+
+    kaynak = pathlib.Path(main.__file__).read_text(encoding="utf-8")
+    assert "pygame.SCALED" not in kaynak
+    pencere = main.open_screen(fullscreen=False, size=(640, 360))
+    assert pencere.get_size() == (640, 360)
+    assert main.open_screen(fullscreen=True, size=(640, 360)) is not None
+
+
+def test_kucuk_ekranda_da_basilir(screen):
+    """Oyun alanından küçük bir ekranda ölçek 1'in altına düşmemeli."""
+    kucuk = pygame.display.set_mode((240, 140))
+    renderer = Renderer(kucuk)
+    game = G.Game(Progress(collected=[], path=os.devnull), random.Random(1), 0)
+    renderer.draw(game, 10)
+    renderer.present()
+    pygame.display.set_mode((640, 360))
